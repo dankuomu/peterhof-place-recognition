@@ -4,37 +4,59 @@ import os
 from model import PlaceRecognizer
 import argparse
 
-recognizer: PlaceRecognizer
+recognizer = None
 
 async def start(update: Update, context: CallbackContext):
-    await update.message.reply_text("Привет! Отправь мне фото, и я постараюсь понять что это за место.")
+    await update.message.reply_text("Привет! Отправь мне фото окрестностей ПУНКа, и я постараюсь понять что это за место.")
 
 async def handle_photo(update: Update, context: CallbackContext):
-    photo_file = await update.message.photo[-1].get_file()
+    global recognizer
     
-    file_path = "query_image.jpg"
-    await photo_file.download_to_drive(file_path)
+    status_message = await update.message.reply_text("🔍 Обрабатываю изображение...")
     
-    label, similar = recognizer.recognize_place(file_path)
-    if label:
-        message = f"Распознанное место: {label}."
+    try:
+        photo_file = await update.message.photo[-1].get_file()
+        
+        file_path = "query_image.jpg"
+        await photo_file.download_to_drive(file_path)
+        
+        await status_message.edit_text("🔍 Анализирую изображение...")
+        
+        label, similar = recognizer.recognize_place(file_path)
+        
+        if label:
+            await status_message.edit_text("✅ Анализ завершен!")
+            
+            message = f"Распознанное место: {label}."
+            await update.message.reply_text(message)
+            
+            await update.message.reply_text("Вот 3 похожих фотографии:")
+            
+            photos = []
+            for i, (img_path, distance) in enumerate(similar[:3], 1):
+                photos.append(InputMediaPhoto(
+                    media=open(img_path, "rb")
+                ))
 
-        photos = []
-        for i, (img_path, distance) in enumerate(similar, 1):
-            photos.append(InputMediaPhoto(media=open(img_path, "rb")))
-
-        await update.message.reply_text(message)
-        await update.message.reply_media_group(photos)
-    else:
-        await update.message.reply_text("Не удалось распознать место.")
+            await update.message.reply_media_group(photos)
+            
+            await status_message.delete()
+        else:
+            await status_message.edit_text("❌ Не удалось распознать место.")
+            
+    except Exception as e:
+        await status_message.edit_text(f"⚠️ Произошла ошибка: {str(e)}")
+        print(f"Error: {e}")
 
 def main():
     parser = argparse.ArgumentParser(description='Place recognizer')
     parser.add_argument('-t', '--token', type=str, required=True, help='Telegram Bot Token')
     args = parser.parse_args()
 
+    global recognizer
     recognizer = PlaceRecognizer()
     recognizer.load_model()
+    print("Модель успешно загружена")
 
     application = Application.builder().token(args.token).build()
     
